@@ -1,11 +1,13 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { likeProduct as likeProductInDb } from '@/lib/products'
+import { createNotice } from '@/lib/notices'
 
 export async function likeProductAction(id: string) {
   const newLikes = await likeProductInDb(id)
-  revalidatePath(`/products/${id}`) // 다른 탭도 최신값으로
+  revalidatePath(`/products/${id}`)
   return newLikes
 }
 
