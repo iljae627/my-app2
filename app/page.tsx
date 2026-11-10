@@ -44,6 +44,18 @@ export default function Home() {
             /products — 비동기 데이터 페칭 + Suspense(loading.tsx) →
           </Link>
           <Link
+            href="/cart"
+            className="font-medium text-zinc-950 underline underline-offset-4 dark:text-zinc-50"
+          >
+            /cart — 쿠키 기반 장바구니 →
+          </Link>
+          <Link
+            href="/register"
+            className="font-medium text-zinc-950 underline underline-offset-4 dark:text-zinc-50"
+          >
+            /register — Auth.js 회원가입(비밀번호 해싱) →
+          </Link>
+          <Link
             href="/api/hello"
             className="font-medium text-zinc-950 underline underline-offset-4 dark:text-zinc-50"
           >

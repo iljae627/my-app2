@@ -1,67 +1,130 @@
+import { connectDB } from '@/lib/mongodb'
+import { Product as ProductModel } from '@/models/Product'
+import type { ClientSession } from 'mongoose'
+
 export type Product = {
   id: string
   name: string
   description: string
-  likes: number
+  price: number
+  emoji: string
+  stock: number
 }
 
-const products: Product[] = [
+type ProductDoc = {
+  _id: unknown
+  name: string
+  description: string
+  price: number
+  emoji: string
+  stock: number
+}
+
+function toProduct(doc: ProductDoc): Product {
+  return {
+    id: String(doc._id),
+    name: doc.name,
+    description: doc.description,
+    price: doc.price,
+    emoji: doc.emoji,
+    stock: doc.stock,
+  }
+}
+
+// 데모용 초기 상품 데이터입니다. 4주차 in-memory 샘플과 겹치는 상품도
+// 있지만, 이번엔 실제 컬렉션에 저장되어 여러 사용자/요청이 같은 데이터를
+// 공유합니다.
+const SEED_PRODUCTS = [
   {
-    id: '1',
-    name: '머그컵',
-    description: '없음',
-    likes: 1,
+    name: 'jij 머그컵',
+    description: '수업 중 마실 커피를 위한 머그컵',
+    price: 12000,
+    emoji: '☕',
+    stock: 42,
   },
   {
-    id: '2',
-    name: '휴대폰',
-    description: '아이폰 15',
-    likes: 15,
+    name: 'Next.js 스티커',
+    description: '노트북에 붙이는 스티커 모음',
+    price: 5000,
+    emoji: '🏷️',
+    stock: 100,
   },
   {
-    id: '3',
-    name: '연필',
-    description: '수능 샤프',
-    likes: 24,
+    name: 'OWASP Top 10 포스터',
+    description: '포스터',
+    price: 8000,
+    emoji: '🛡️',
+    stock: 30,
   },
   {
-    id: '4',
-    name: '노트',
-    description: '아이패드',
-    likes: 30,
+    name: '기계식 키보드',
+    description: '기계식 키보드입니다.',
+    price: 89000,
+    emoji: '⌨️',
+    stock: 15,
   },
   {
-    id: '5',
-    name: '노트북',
-    description: '레노버 리전 노트북',
-    likes: 25,
-  },
-  {
-    id: '6',
-    name: 'nextjs',
-    description: '배우는 중',
-    likes: 10,
+    name: '노트북 거치대',
+    description: '알루미늄 거치대',
+    price: 32000,
+    emoji: '💻',
+    stock: 20,
   },
 ]
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+// 상품 카탈로그는 (공지사항과 달리) 사용자가 아니라 운영자가 채워 넣는
+// 데이터입니다. 그래서 9주차에서 없앤 "자동 시드"를 여기서는 다시
+// 씁니다 — 컬렉션이 비어있으면 데모 상품으로 자동 채웁니다. 실제
+// 서비스라면 관리자 도구나 별도 시드 스크립트가 이 역할을 대신합니다.
+async function seedIfEmpty() {
+  const count = await ProductModel.countDocuments()
+  if (count === 0) {
+    await ProductModel.insertMany(SEED_PRODUCTS)
+  }
 }
 
 export async function getProducts(): Promise<Product[]> {
-  await delay(700)
-  return products
+  await connectDB()
+  await seedIfEmpty()
+  const docs = await ProductModel.find()
+    .sort({ createdAt: 1 })
+    .lean<ProductDoc[]>()
+  return docs.map(toProduct)
 }
 
-export async function getProduct(id: string): Promise<Product | undefined> {
-  await delay(400)
-  return products.find((p) => p.id === id)
+export async function getProduct(id: string): Promise<Product | null> {
+  await connectDB()
+  try {
+    const doc = await ProductModel.findById(id).lean<ProductDoc | null>()
+    return doc ? toProduct(doc) : null
+  } catch {
+    // 형식이 잘못된 id(예: 조작된 URL)로 조회하면 Mongoose가 CastError를
+    // 던집니다. 존재하지 않는 상품과 동일하게 처리합니다.
+    return null
+  }
 }
 
-export async function likeProduct(id: string): Promise<number> {
-  await delay(300)
-  const product = products.find((p) => p.id === id)
-  if (!product) return 0
-  product.likes += 1
-  return product.likes
+export async function getProductsByIds(ids: string[]): Promise<Product[]> {
+  if (ids.length === 0) return []
+  await connectDB()
+  try {
+    const docs = await ProductModel.find({ _id: { $in: ids } }).lean<
+      ProductDoc[]
+    >()
+    return docs.map(toProduct)
+  } catch {
+    return []
+  }
+}
+
+// 충분한 재고가 있을 때만 원자적으로 차감해 음수 재고를 막습니다.
+export async function decrementStock(productId: string, qty: number, session?: ClientSession) {
+  if (!Number.isSafeInteger(qty) || qty < 1) return false
+  await connectDB()
+  const result = await ProductModel.updateOne(
+    { _id: productId, stock: { $gte: qty } },
+    { $inc: { stock: -qty } },
+    { session },
+  )
+  return result.modifiedCount === 1
 }
